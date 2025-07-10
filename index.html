@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>词汇交互记忆(熊猫李英语)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: 'Noto Sans SC', sans-serif; background: #f0f9ff; }
+    .tab-active { @apply bg-blue-600 text-white; }
+    .tab-inactive { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
+    .upload-btn { @apply bg-gradient-to-r from-green-400 to-blue-500 text-white px-6 py-3 rounded-full shadow-lg hover:opacity-90 transition; }
+    .flip-card { width: 280px; height: 180px; perspective: 1000px; }
+    .flip-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d; }
+    .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+    .flip-front, .flip-back {
+      position: absolute; width: 100%; height: 100%; backface-visibility: hidden;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); background: white;
+      padding: 0.5rem;
+    }
+    .flip-front p {
+      @apply px-4 text-left leading-relaxed break-words;
+    }
+    .flip-back { transform: rotateY(180deg); }
+    .speaker-btn { position: absolute; top: 8px; right: 8px; font-size: 1.25rem; color: #555; }
+    .multi-option { @apply w-full flex items-center justify-center text-center font-bold rounded-lg p-4 cursor-pointer transition; background: #FED7AA; }
+    .multi-option:hover { background: #FDBA74; }
+    .match-card { @apply flex items-center justify-center rounded-lg cursor-pointer transition; width: 100%; height: 60px; }
+    .match-card-word { background: #A5B4FC; }
+    .match-card-def { background: #86EFAC; }
+    .selected { @apply opacity-50; }
+    .nav-btn { @apply bg-blue-500 text-white rounded-full px-4 py-2 hover:bg-blue-600 transition; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <header class="bg-white shadow p-4">
+    <h1 class="text-center text-2xl font-bold text-blue-700">词汇交互记忆(熊猫李英语)</h1>
+  </header>
+
+  <!-- 上传区 + 示例 -->
+  <div id="upload-area" class="flex-1 flex flex-col justify-center items-center mx-8 border-4 border-dashed border-gray-300 rounded-lg p-8 space-y-6"
+       ondragover="event.preventDefault()" ondrop="event.preventDefault(); handleFile(event.dataTransfer.files[0]);">
+    <p class="text-lg text-gray-600">拖拽或释放 Excel 文件到此，或 点击 下方按钮 选择 文件</p>
+    <button id="file-btn" class="upload-btn">选择 Excel 文件</button>
+    <input type="file" id="file-input" accept=".xlsx" class="hidden" />
+
+    <!-- 示例表格 -->
+    <table class="table-auto border-collapse border border-gray-400 w-full max-w-md">
+      <thead>
+        <tr class="bg-gray-100">
+          <th class="border border-gray-300 p-2">序号</th>
+          <th class="border border-gray-300 p-2">单词</th>
+          <th class="border border-gray-300 p-2">音标</th>
+          <th class="border border-gray-300 p-2">词性词义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="border border-gray-300 p-2 text-center">1</td>
+          <td class="border border-gray-300 p-2 text-center">apple</td>
+          <td class="border border-gray-300 p-2 text-center">/ˈæp.əl/</td>
+          <td class="border border-gray-300 p-2">n. 苹果</td>
+        </tr>
+        <tr>
+          <td class="border border-gray-300 p-2 text-center">2</td>
+          <td class="border border-gray-300 p-2 text-center">book</td>
+          <td class="border border-gray-300 p-2 text-center">/bʊk/</td>
+          <td class="border border-gray-300 p-2">n. 书</td>
+        </tr>
+        <tr>
+          <td class="border border-gray-300 p-2 text-sm text-gray-600" colspan="4">
+            联系微信 lgb13787746436，QQ：516351020，购买3000新课标词汇、译林高中英语词汇、人教版高中英语词汇 Excel 文件
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="text-sm text-gray-700">使用教程：</div>
+    <img src="使用教程.jpg" alt="使用教程" class="w-48 h-48 object-contain" />
+  </div>
+
+  <!-- 主界面 -->
+  <div id="main" class="hidden flex-1 flex flex-col mx-8 my-4">
+    <div class="flex justify-center space-x-4 mb-6">
+      <button data-mode="flash" class="tab-inactive px-5 py-2 rounded-full">翻翻看</button>
+      <button data-mode="multi" class="tab-inactive px-5 py-2 rounded-full">选选看</button>
+      <button data-mode="match" class="tab-inactive px-5 py-2 rounded-full">消消看</button>
+    </div>
+    <div id="content" class="flex-1">
+      <!-- 翻翻看 -->
+      <div id="flash" class="mode hidden flex flex-col items-center space-y-4 overflow-y-auto">
+        <div id="flash-list" class="flex flex-col items-center space-y-4 pb-8"></div>
+        <div class="flex justify-center items-center mt-4 space-x-6">
+          <button id="prev-btn-flash" class="nav-btn">上一组</button>
+          <span class="text-gray-700">第 <span id="grp-num-flash">1</span> / <span id="grp-total-flash">0</span> 组</span>
+          <button id="next-btn-flash" class="nav-btn">下一组</button>
+        </div>
+      </div>
+      <!-- 选选看 -->
+      <div id="multi" class="mode hidden flex flex-col items-center">
+        <div class="mb-4">
+          <button id="mode-eng2chn" class="tab-inactive px-4 py-2 rounded-full mr-2">英译中</button>
+          <button id="mode-chn2eng" class="tab-inactive px-4 py-2 rounded-full">中译英</button>
+        </div>
+        <div id="multi-question" class="text-xl font-bold text-blue-600 mb-4 text-center"></div>
+        <div id="multi-options" class="w-full max-w-md space-y-3"></div>
+        <div class="flex justify-center items-center mt-4 space-x-6">
+          <button id="prev-btn-multi" class="nav-btn">上一组</button>
+          <span class="text-gray-700">第 <span id="grp-num-multi">1</span> / <span id="grp-total-multi">0</span> 组</span>
+          <button id="next-btn-multi" class="nav-btn">下一组</button>
+        </div>
+      </div>
+      <!-- 消消看 -->
+      <div id="match" class="mode hidden flex flex-col items-center">
+        <div id="match-grid" class="grid grid-cols-3 gap-4 max-w-lg w-full mb-4"></div>
+        <div id="match-grid-ch" class="grid grid-cols-3 gap-4 max-w-lg w-full mb-4"></div>
+        <div class="flex justify-center items-center space-x-6">
+          <button id="prev-btn-match" class="nav-btn">上一组</button>
+          <span class="text-gray-700">第 <span id="grp-num-match">1</span> / <span id="grp-total-match">0</span> 组</span>
+          <button id="next-btn-match" class="nav-btn">下一组</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <audio id="audio-correct" src="声效/rightvoice.mp3"></audio>
+  <audio id="audio-wrong" src="声效/wrongvoice.mp3"></audio>
+<script>
+  let groups = [], curGroup = 0, selectedCell = null, mcMode = 'eng2chn';
+  document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode').forEach(m => m.classList.add('hidden'));
+    document.getElementById(btn.dataset.mode).classList.remove('hidden');
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('tab-active', b === btn));
+    renderGroup(btn.dataset.mode);
+  }));
+  document.getElementById('mode-eng2chn').onclick = () => setMcMode('eng2chn');
+  document.getElementById('mode-chn2eng').onclick = () => setMcMode('chn2eng');
+  function setMcMode(mode) { mcMode = mode; document.getElementById('mode-eng2chn').classList.toggle('tab-active', mode === 'eng2chn'); document.getElementById('mode-chn2eng').classList.toggle('tab-active', mode === 'chn2eng'); renderMulti(groups[curGroup]); }
+  document.getElementById('file-btn').onclick = () => document.getElementById('file-input').click();
+  document.getElementById('file-input').onchange = e => handleFile(e.target.files[0]);
+  function handleFile(file) {
+    const base = file.name.replace(/\.xlsx$/i, '');
+    document.title = base + '交互记忆(熊猫李英语)';
+    document.querySelector('header h1').textContent = base + '交互记忆(熊猫李英语)';
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: ['序号','单词','音标','词性','词义'], range: 1 });
+      for (let i = 0; i < data.length; i += 50) groups.push(data.slice(i, i + 50));
+      ['flash','multi','match'].forEach(m => document.getElementById(`grp-total-${m}`).innerText = groups.length);
+      document.getElementById('upload-area').remove();
+      document.getElementById('main').classList.remove('hidden');
+      document.querySelector('[data-mode]').click();
+      setMcMode('eng2chn');
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  ['flash','multi','match'].forEach(m => { document.getElementById(`prev-btn-${m}`).onclick = () => { if (curGroup > 0) curGroup--; renderGroup(m); }; document.getElementById(`next-btn-${m}`).onclick = () => { if (curGroup < groups.length - 1) curGroup++; renderGroup(m); }; });
+  function renderGroup(mode) { document.getElementById(`grp-num-${mode}`).innerText = curGroup + 1; const grp = groups[curGroup] || []; if (mode === 'flash') renderFlashGroup(grp); if (mode === 'multi') renderMulti(grp); if (mode === 'match') renderMatch(grp); }
+  function renderFlashGroup(grp) { const list=document.getElementById('flash-list'); list.innerHTML=''; grp.forEach(item=>{ const container=document.createElement('div'); container.className='flip-card'; const inner=document.createElement('div'); inner.className='flip-inner'; const front=document.createElement('div'); front.className='flip-front'; front.innerHTML=`<p>${item.词性||''}${item.词义? ' '+item.词义:''}</p>`; const back=document.createElement('div'); back.className='flip-back relative'; back.innerHTML=`<button class="speaker-btn">🔊</button><div class="flex flex-col items-center justify-center h-full"><p class="text-xl font-bold">${item.单词||''}</p><p class="text-sm text-green-600 mt-1">${item.音标||''}</p></div>`; inner.append(front,back); container.appendChild(inner); container.onclick=()=>container.classList.toggle('flipped'); back.querySelector('.speaker-btn').addEventListener('click',e=>{e.stopPropagation();playYoudao(item.单词||'');}); list.appendChild(container); }); }
+  function renderMulti(grp) { const qDiv=document.getElementById('multi-question'), opts=document.getElementById('multi-options'); opts.innerHTML=''; const item=grp[Math.floor(Math.random()*grp.length)]||{}; if(mcMode==='eng2chn'){ qDiv.innerText=item.单词||''; const choices=[item]; while(choices.length<3){ const c=grp[Math.floor(Math.random()*grp.length)]; if(!choices.includes(c))choices.push(c);} shuffle(choices).forEach(opt=>{ const btn=document.createElement('div'); btn.className='multi-option'; btn.innerText=`${opt.词性||''}${opt.词义? ' '+opt.词义:''}`; btn.onclick=()=>{playSound(opt===item);renderMulti(grp);}; opts.appendChild(btn); }); }else{ qDiv.innerText=`${item.词性||''}${item.词义? ' '+item.词义:''}`; const choices=[item]; while(choices.length<3){ const c=grp[Math.floor(Math.random()*grp.length)]; if(!choices.includes(c))choices.push(c);} shuffle(choices).forEach(opt=>{ const btn=document.createElement('div'); btn.className='multi-option'; btn.innerText=opt.单词||''; btn.onclick=()=>{playSound(opt===item);renderMulti(grp);}; opts.appendChild(btn); }); } }
+  function renderMatch(grp) { const topGrid=document.getElementById('match-grid'), botGrid=document.getElementById('match-grid-ch'); topGrid.innerHTML=''; botGrid.innerHTML=''; selectedCell=null; const sel=shuffle(grp.slice()).slice(0,3), defs=shuffle(sel.slice()); sel.forEach(item=>{ const d=document.createElement('div'); d.className='match-card match-card-word flex items-center justify-center'; d.innerText=item.单词||''; d.dataset.key=(item.词性||'')+'_'+(item.词义||''); d.onclick=()=>handleMatchClick(d); topGrid.appendChild(d); }); defs.forEach(item=>{ const d=document.createElement('div'); d.className='match-card match-card-def flex items-center justify-center'; d.innerText=(item.词性||'')+' '+(item.词义||''); d.dataset.key=(item.词性||'')+'_'+(item.词义||''); d.onclick=()=>handleMatchClick(d); botGrid.appendChild(d); }); }
+  function handleMatchClick(el){ if(!selectedCell){ selectedCell=el;el.classList.add('selected'); }else if(el!==selectedCell){ if(el.dataset.key===selectedCell.dataset.key){ selectedCell.remove();el.remove();playSound(true);}else{selectedCell.classList.remove('selected');playSound(false);} selectedCell=null;const topGrid=document.getElementById('match-grid'),botGrid=document.getElementById('match-grid-ch'); if(topGrid.children.length===0 && botGrid.children.length===0){ if(curGroup<groups.length-1)curGroup++; renderMatch(groups[curGroup]); } } }
+  function shuffle(arr){ for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr; }
+  function playSound(ok){document.getElementById(ok?'audio-correct':'audio-wrong').play();}
+  function playYoudao(word){if(!word)return;new Audio(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=1`).play();}
+</script>
+</body>
+</html>
